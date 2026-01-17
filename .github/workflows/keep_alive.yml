@@ -1,0 +1,15 @@
+name: Keep Render Service Alive
+
+on:
+  schedule:
+    # Run every 14 minutes to beat the 15-minute sleep timer
+    - cron: '*/14 * * * *'
+  workflow_dispatch: # Allows manual triggering from GitHub UI
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping API Health Check
+        # Replace the URL below with your actual Render service URL
+        run: curl -I https://chalk-pyserver.onrender.com/
