@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from chalk_processor import process_image
-from supabase_client import upload_image_to_supabase
+from supabase_client import upload_image_to_supabase, insert_scan_record
 
 app = Flask(__name__)
 CORS(app) # Enable CORS for frontend integration
@@ -19,10 +19,6 @@ def health_check():
 
 @app.route("/process", methods=["POST"])
 def process_chalk():
-    """
-    Expects 'image' file in multipart/form-data.
-    Returns JSON with 'original_url', 'processed_url', and 'scan_id'.
-    """
     if 'image' not in request.files:
         return jsonify({"error": "No image file provided"}), 400
         
@@ -30,17 +26,16 @@ def process_chalk():
     if file.filename == '':
         return jsonify({"error": "No selected file"}), 400
 
+    scan_id = str(uuid.uuid4())
+    filename = f"{scan_id}.jpg"
+    bucket_name = os.environ.get("SUPABASE_BUCKET", "chalk-images")
+    original_url = None
+
     try:
         # 1. Read file bytes
         image_bytes = file.read()
         
-        # 2. Setup IDs and Paths
-        scan_id = str(uuid.uuid4())
-        filename = f"{scan_id}.jpg"
-        bucket_name = os.environ.get("SUPABASE_BUCKET", "chalk-images")
-
-        # 3. Upload ORIGINAL immediately (Safety fallback)
-        print(f"Uploading original: {filename}")
+        # 2. Upload ORIGINAL immediately (Safety fallback)
         original_url = upload_image_to_supabase(
             image_bytes, 
             filename, 
@@ -48,22 +43,23 @@ def process_chalk():
             bucket_name=bucket_name
         )
 
-        # 4. Get Gemini Key & Process
+        # 3. Get Gemini Key & Process
         gemini_key = os.environ.get("GEMINI_API_KEY")
         if not gemini_key:
             return jsonify({"error": "Server misconfiguration: GEMINI_API_KEY missing"}), 500
 
-        print(f"Processing scan: {scan_id}")
         processed_bytes = process_image(image_bytes, gemini_key)
         
-        # 5. Upload PROCESSED result
-        print(f"Uploading processed: {filename}")
+        # 4. Upload PROCESSED result
         processed_url = upload_image_to_supabase(
             processed_bytes, 
             filename, 
             folder="processed", 
             bucket_name=bucket_name
         )
+        
+        # 5. Record to Database (Best Practice)
+        insert_scan_record(scan_id, original_url, processed_url, status="completed")
         
         return jsonify({
             "status": "success",
@@ -73,10 +69,18 @@ def process_chalk():
         }), 200
 
     except Exception as e:
-        print(f"Processing Error: {str(e)}")
-        # Even if processing fails, if we uploaded the original, 
-        # we might want to return that (conceptually), but for now standard error is fine.
-        return jsonify({"error": str(e)}), 500
+        error_msg = str(e)
+        print(f"Processing Error: {error_msg}")
+        
+        # Log failure to DB if we at least have an original URL
+        if original_url:
+            insert_scan_record(scan_id, original_url, status="failed", error=error_msg)
+            
+        return jsonify({
+            "error": error_msg,
+            "scan_id": scan_id,
+            "original_url": original_url
+        }), 500
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
