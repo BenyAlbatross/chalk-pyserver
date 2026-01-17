@@ -48,7 +48,54 @@ def get_scan_status(scan_id):
     if not record:
         return jsonify({"error": "Scan not found"}), 404
     
-    return jsonify(format_scan_record(record)), 200
+    response = jsonify(format_scan_record(record))
+    # Cache completed scans for 1 hour, processing scans for 5 seconds
+    if record.get("status") == "completed":
+        response.headers['Cache-Control'] = 'public, max-age=3600'
+    else:
+        response.headers['Cache-Control'] = 'public, max-age=5'
+    return response, 200
+
+@app.route("/api/scans/<semester>", methods=["GET"])
+def get_scans_by_semester(semester):
+    """
+    Get all scans for a specific semester.
+    Frontend can call this to fetch all doors for display.
+    """
+    try:
+        from supabase_client import get_supabase_client
+        supabase = get_supabase_client()
+        
+        response = supabase.table("chalk_scans").select("*").eq("semester", semester).execute()
+        
+        if not response.data:
+            return jsonify([]), 200
+        
+        # Map to frontend format
+        scans = [format_scan_record(record) for record in response.data]
+        return jsonify(scans), 200
+        
+    except Exception as e:
+        print(f"Error fetching scans for semester {semester}: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/scan/<room_id>", methods=["GET"])
+def get_scan_by_room(room_id):
+    """
+    Get a specific scan by room_id.
+    Frontend can poll this during processing.
+    """
+    record = get_scan_by_room_id(room_id)
+    if not record:
+        return jsonify({"error": "Scan not found"}), 404
+    
+    response = jsonify(format_scan_record(record))
+    # Cache completed scans for 1 hour, processing scans for 5 seconds
+    if record.get("status") == "completed":
+        response.headers['Cache-Control'] = 'public, max-age=3600'
+    else:
+        response.headers['Cache-Control'] = 'public, max-age=5'
+    return response, 200
 
 def background_processing_pipeline(scan_id, image_bytes, filename, bucket_name, gemini_key):
     """
@@ -133,6 +180,12 @@ def background_processing_pipeline(scan_id, image_bytes, filename, bucket_name, 
 @app.route("/extract", methods=["POST"])
 @app.route("/process", methods=["POST"])
 def process_chalk():
+    print("=" * 50)
+    print("📥 RECEIVED REQUEST TO /extract")
+    print(f"Form data: {request.form}")
+    print(f"Files: {request.files}")
+    print("=" * 50)
+    
     # 1. Check if 'roomId' is provided and already exists (Idempotency)
     room_id = request.form.get("roomId")
     if room_id:
