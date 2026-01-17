@@ -26,6 +26,12 @@ def process_chalk():
     if file.filename == '':
         return jsonify({"error": "No selected file"}), 400
 
+    # Extract extra fields from form data
+    # Default style to "normal" as per this pipeline's purpose
+    style = request.form.get("style", "normal")
+    scan_type = request.form.get("type")
+    semester = request.form.get("semester")
+
     scan_id = str(uuid.uuid4())
     filename = f"{scan_id}.jpg"
     bucket_name = os.environ.get("SUPABASE_BUCKET", "chalk-images")
@@ -48,6 +54,8 @@ def process_chalk():
         if not gemini_key:
             return jsonify({"error": "Server misconfiguration: GEMINI_API_KEY missing"}), 500
 
+        # Note: Currently style doesn't change processing logic, 
+        # but we save it as "normal" in the DB.
         processed_bytes = process_image(image_bytes, gemini_key)
         
         # 4. Upload PROCESSED result
@@ -58,23 +66,39 @@ def process_chalk():
             bucket_name=bucket_name
         )
         
-        # 5. Record to Database (Best Practice)
-        insert_scan_record(scan_id, original_url, processed_url, status="completed")
+        # 5. Record to Database
+        insert_scan_record(
+            scan_id, 
+            original_url, 
+            processed_url, 
+            status="completed",
+            style=style,
+            type=scan_type,
+            semester=semester
+        )
         
         return jsonify({
             "status": "success",
             "scan_id": scan_id,
             "original_url": original_url,
-            "processed_url": processed_url
+            "processed_url": processed_url,
+            "style": style
         }), 200
 
     except Exception as e:
         error_msg = str(e)
         print(f"Processing Error: {error_msg}")
         
-        # Log failure to DB if we at least have an original URL
         if original_url:
-            insert_scan_record(scan_id, original_url, status="failed", error=error_msg)
+            insert_scan_record(
+                scan_id, 
+                original_url, 
+                status="failed", 
+                error=error_msg,
+                style=style,
+                type=scan_type,
+                semester=semester
+            )
             
         return jsonify({
             "error": error_msg,

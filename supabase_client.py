@@ -33,9 +33,10 @@ def upload_image_to_supabase(image_bytes, file_name, folder="processed", bucket_
         print(f"Supabase Upload Error ({folder}): {e}")
         raise e
 
-def insert_scan_record(scan_id, original_url, processed_url=None, status="completed", error=None):
+def insert_scan_record(scan_id, original_url, processed_url=None, status="completed", error=None, **kwargs):
     """
     Inserts a tracking record into the chalk_scans table.
+    Accepts extra fields via **kwargs (style, type, semester).
     """
     try:
         supabase = get_supabase_client()
@@ -44,11 +45,13 @@ def insert_scan_record(scan_id, original_url, processed_url=None, status="comple
             "original_url": original_url,
             "processed_url": processed_url,
             "status": status,
-            "error_message": error
+            "error_message": error,
+            **kwargs
         }
+        # Filter out None values to let DB defaults handle them
+        data = {k: v for k, v in data.items() if v is not None}
+        
         return supabase.table("chalk_scans").insert(data).execute()
     except Exception as e:
         print(f"Database Insert Error: {e}")
-        # We don't raise here to avoid crashing the whole request 
-        # if just the DB logging fails, but in production you might want to.
         return None
