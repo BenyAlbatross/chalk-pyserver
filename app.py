@@ -11,13 +11,29 @@ load_dotenv()
 
 from chalk_processor import process_image
 from style_processor import make_ugly, make_slop, make_pretty
-from supabase_client import upload_image_to_supabase, insert_scan_record, update_scan_record, get_scan_record
+from supabase_client import upload_image_to_supabase, insert_scan_record, update_scan_record, get_scan_record, get_scan_by_room_id
 
 app = Flask(__name__)
 CORS(app)
 
 # Global Thread Pool
 executor = ThreadPoolExecutor(max_workers=4)
+
+def format_scan_record(record):
+    """
+    Maps the internal DB schema to the frontend's expected JSON contract.
+    """
+    return {
+        "scan_id": record.get("id"),
+        "roomId": record.get("room_id"),
+        "status": record.get("status"),
+        "chalkImage": record.get("processed_url"),   # Maps to processed_url
+        "uglifyImage": record.get("ugly_url"),       # Maps to ugly_url
+        "prettifyImage": record.get("pretty_url"),   # Maps to pretty_url
+        "sloppifyText": record.get("slop_text"),     # Maps to slop_text
+        "original_url": record.get("original_url"),
+        "semester": record.get("semester")
+    }
 
 @app.route("/", methods=["GET"])
 def health_check():
@@ -32,7 +48,7 @@ def get_scan_status(scan_id):
     if not record:
         return jsonify({"error": "Scan not found"}), 404
     
-    return jsonify(record), 200
+    return jsonify(format_scan_record(record)), 200
 
 def background_processing_pipeline(scan_id, image_bytes, filename, bucket_name, gemini_key):
     """
@@ -114,8 +130,18 @@ def background_processing_pipeline(scan_id, image_bytes, filename, bucket_name, 
         print(f"[{scan_id}] Pipeline FAILED: {e}")
         update_scan_record(scan_id, status="failed", error_message=str(e))
 
+@app.route("/extract", methods=["POST"])
 @app.route("/process", methods=["POST"])
 def process_chalk():
+    # 1. Check if 'roomId' is provided and already exists (Idempotency)
+    room_id = request.form.get("roomId")
+    if room_id:
+        existing_record = get_scan_by_room_id(room_id)
+        if existing_record:
+            print(f"[{room_id}] Found existing scan: {existing_record.get('id')}")
+            # If it exists, return it immediately (200 OK)
+            return jsonify(format_scan_record(existing_record)), 200
+
     if 'image' not in request.files:
         return jsonify({"error": "No image file provided"}), 400
         
@@ -151,7 +177,8 @@ def process_chalk():
             scan_id, 
             original_url, 
             status="queued",
-            semester=semester
+            semester=semester,
+            room_id=room_id  # Pass room_id to DB
         )
 
         if not result or not result.data:
@@ -170,13 +197,16 @@ def process_chalk():
             gemini_key
         )
 
-        # 5. Return immediately
-        return jsonify({
+        # 5. Return immediately (202 Accepted)
+        # We return the initial record structure so frontend knows the scan_id
+        initial_response = {
             "status": "queued",
             "scan_id": scan_id,
+            "roomId": room_id,
             "original_url": original_url,
             "message": "Processing started in background."
-        }), 202
+        }
+        return jsonify(initial_response), 202
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500

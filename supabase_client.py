@@ -36,7 +36,7 @@ def upload_image_to_supabase(image_bytes, file_name, folder="processed", bucket_
 def insert_scan_record(scan_id, original_url, processed_url=None, status="completed", error=None, **kwargs):
     """
     Inserts a tracking record into the chalk_scans table.
-    Accepts extra fields via **kwargs (style, semester).
+    Accepts extra fields via **kwargs (style, semester, room_id).
     """
     try:
         supabase = get_supabase_client()
@@ -91,4 +91,18 @@ def get_scan_record(scan_id):
         return None
     except Exception as e:
         print(f"Database Fetch Error: {e}")
+        return None
+
+def get_scan_by_room_id(room_id):
+    """
+    Fetches a single scan record by room_id.
+    """
+    try:
+        supabase = get_supabase_client()
+        response = supabase.table("chalk_scans").select("*").eq("room_id", room_id).execute()
+        if response.data:
+            return response.data[0]
+        return None
+    except Exception as e:
+        print(f"Database Fetch Error (room_id): {e}")
         return None

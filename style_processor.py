@@ -61,7 +61,7 @@ def make_pretty(image_bytes, gemini_api_key):
     client = genai.Client(api_key=gemini_api_key)
     pil_img = Image.open(io.BytesIO(image_bytes))
     
-    prompt = "Create a high-quality, photorealistic studio photograph based on this chalk drawing. Replace the chalk lines with real objects and cinematic lighting. Make it really beautiful."
+    prompt = "Create a high-quality, photorealistic studio photograph based on this chalk drawing. Replace the chalk lines with real objects and cinematic lighting. Make it really beautiful. Make the background light. Feel free to make it abstract!"
 
     try:
         # Using the specific Image-to-Image preview model from your list
