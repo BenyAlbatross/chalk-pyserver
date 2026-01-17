@@ -51,15 +51,20 @@ def insert_scan_record(scan_id, original_url, processed_url=None, status="comple
         # Filter out None values to let DB defaults handle them
         data = {k: v for k, v in data.items() if v is not None}
         
-        return supabase.table("chalk_scans").insert(data).execute()
+        response = supabase.table("chalk_scans").insert(data).execute()
+        return response
     except Exception as e:
         print(f"Database Insert Error: {e}")
+        # Print full details if available
+        if hasattr(e, 'details'):
+             print(f"Details: {e.details}")
+        if hasattr(e, 'message'):
+             print(f"Message: {e.message}")
         return None
 
 def update_scan_record(scan_id, **kwargs):
     """
-    Updates an existing tracking record in the chalk_scans table using UPSERT.
-    This helps if strict RLS policies prevent standard updates but allow inserts/upserts.
+    Updates an existing tracking record in the chalk_scans table.
     """
     try:
         supabase = get_supabase_client()
@@ -68,16 +73,22 @@ def update_scan_record(scan_id, **kwargs):
         if not data:
             return None
             
-        data['id'] = scan_id # Ensure ID is present for upsert
-        
-        # 1. Fetch existing
-        existing = supabase.table("chalk_scans").select("*").eq("id", scan_id).execute()
-        if existing.data:
-            final_data = existing.data[0]
-            final_data.update(data)
-            return supabase.table("chalk_scans").upsert(final_data).execute()
-        else:
-            return supabase.table("chalk_scans").upsert(data).execute()
+        # Direct update - simpler and avoids "partial insert" errors
+        return supabase.table("chalk_scans").update(data).eq("id", scan_id).execute()
     except Exception as e:
         print(f"Database Update Error: {e}")
+        return None
+
+def get_scan_record(scan_id):
+    """
+    Fetches a single scan record by ID.
+    """
+    try:
+        supabase = get_supabase_client()
+        response = supabase.table("chalk_scans").select("*").eq("id", scan_id).execute()
+        if response.data:
+            return response.data[0]
+        return None
+    except Exception as e:
+        print(f"Database Fetch Error: {e}")
         return None
