@@ -7,3 +7,4 @@ pillow
 supabase
 python-dotenv
 gunicorn
+requests
