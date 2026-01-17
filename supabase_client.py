@@ -36,7 +36,7 @@ def upload_image_to_supabase(image_bytes, file_name, folder="processed", bucket_
 def insert_scan_record(scan_id, original_url, processed_url=None, status="completed", error=None, **kwargs):
     """
     Inserts a tracking record into the chalk_scans table.
-    Accepts extra fields via **kwargs (style, type, semester).
+    Accepts extra fields via **kwargs (style, semester).
     """
     try:
         supabase = get_supabase_client()
@@ -54,4 +54,30 @@ def insert_scan_record(scan_id, original_url, processed_url=None, status="comple
         return supabase.table("chalk_scans").insert(data).execute()
     except Exception as e:
         print(f"Database Insert Error: {e}")
+        return None
+
+def update_scan_record(scan_id, **kwargs):
+    """
+    Updates an existing tracking record in the chalk_scans table using UPSERT.
+    This helps if strict RLS policies prevent standard updates but allow inserts/upserts.
+    """
+    try:
+        supabase = get_supabase_client()
+        data = {k: v for k, v in kwargs.items() if v is not None}
+        
+        if not data:
+            return None
+            
+        data['id'] = scan_id # Ensure ID is present for upsert
+        
+        # 1. Fetch existing
+        existing = supabase.table("chalk_scans").select("*").eq("id", scan_id).execute()
+        if existing.data:
+            final_data = existing.data[0]
+            final_data.update(data)
+            return supabase.table("chalk_scans").upsert(final_data).execute()
+        else:
+            return supabase.table("chalk_scans").upsert(data).execute()
+    except Exception as e:
+        print(f"Database Update Error: {e}")
         return None

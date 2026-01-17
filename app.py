@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from chalk_processor import process_image
-from supabase_client import upload_image_to_supabase, insert_scan_record
+from supabase_client import upload_image_to_supabase, insert_scan_record, update_scan_record
 
 app = Flask(__name__)
 CORS(app) # Enable CORS for frontend integration
@@ -32,7 +32,7 @@ def process_chalk():
     scan_type = request.form.get("type")
     semester = request.form.get("semester")
 
-    scan_id = str(uuid.uuid4())
+    scan_id = request.form.get("id") or str(uuid.uuid4())
     filename = f"{scan_id}.jpg"
     bucket_name = os.environ.get("SUPABASE_BUCKET", "chalk-images")
     original_url = None
@@ -49,16 +49,27 @@ def process_chalk():
             bucket_name=bucket_name
         )
 
-        # 3. Get Gemini Key & Process
+        # 3. Insert "PROCESSING" record immediately
+        # This allows the frontend to see the scan right away
+        insert_scan_record(
+            scan_id, 
+            original_url, 
+            processed_url=None, 
+            status="processing",
+            style=style,
+            semester=semester
+        )
+
+        # 4. Get Gemini Key & Process
         gemini_key = os.environ.get("GEMINI_API_KEY")
         if not gemini_key:
-            return jsonify({"error": "Server misconfiguration: GEMINI_API_KEY missing"}), 500
+            raise ValueError("Server misconfiguration: GEMINI_API_KEY missing")
 
         # Note: Currently style doesn't change processing logic, 
         # but we save it as "normal" in the DB.
         processed_bytes = process_image(image_bytes, gemini_key)
         
-        # 4. Upload PROCESSED result
+        # 5. Upload PROCESSED result
         processed_url = upload_image_to_supabase(
             processed_bytes, 
             filename, 
@@ -66,15 +77,13 @@ def process_chalk():
             bucket_name=bucket_name
         )
         
-        # 5. Record to Database
-        insert_scan_record(
-            scan_id, 
-            original_url, 
-            processed_url, 
-            status="completed",
-            style=style,
-            type=scan_type,
-            semester=semester
+        # 6. Update Record to "COMPLETED"
+        print(f"Finalizing record {scan_id}...")
+        
+        update_scan_record(
+            scan_id,
+            processed_url=processed_url,
+            status="completed"
         )
         
         return jsonify({
@@ -89,17 +98,27 @@ def process_chalk():
         error_msg = str(e)
         print(f"Processing Error: {error_msg}")
         
-        if original_url:
-            insert_scan_record(
-                scan_id, 
-                original_url, 
-                status="failed", 
-                error=error_msg,
-                style=style,
-                type=scan_type,
-                semester=semester
+        # If we have an ID, update the record to FAILED
+        # (We might need to insert it if failure happened before step 3, 
+        # but usually failures happen during processing)
+        if scan_id:
+            # Try updating first
+            result = update_scan_record(
+                scan_id,
+                status="failed",
+                error_message=error_msg
             )
-            
+            # If update didn't work (maybe record doesn't exist yet), insert it
+            if not result or not result.data:
+                 insert_scan_record(
+                    scan_id, 
+                    original_url, 
+                    status="failed", 
+                    error=error_msg,
+                    style=style,
+                    semester=semester
+                )
+
         return jsonify({
             "error": error_msg,
             "scan_id": scan_id,
@@ -107,4 +126,4 @@ def process_chalk():
         }), 500
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    app.run(debug=True, port=5001)

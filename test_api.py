@@ -11,7 +11,7 @@ def test_health(url):
     except Exception as e:
         print(f"Health Check Failed: {e}\n")
 
-def test_process(url, image_path, style="normal", scan_type="test", semester="2026"):
+def test_process(url, image_path, style="normal", semester="2026"):
     print(f"Testing Image Processing on {url}/process...")
     
     if not os.path.exists(image_path):
@@ -24,7 +24,6 @@ def test_process(url, image_path, style="normal", scan_type="test", semester="20
     
     data = {
         'style': style,
-        'type': scan_type,
         'semester': semester
     }
 
@@ -43,7 +42,7 @@ def test_process(url, image_path, style="normal", scan_type="test", semester="20
 if __name__ == "__main__":
     # CONFIGURATION
     # Change this to your Render URL for remote testing: https://your-app.onrender.com
-    BASE_URL = "http://localhost:5000" 
+    BASE_URL = "http://127.0.0.1:5001" 
     
     # Check if a URL was provided as an argument
     if len(sys.argv) > 1:
@@ -51,7 +50,7 @@ if __name__ == "__main__":
 
     # IMAGE PATH
     # Provide a path to a test image here
-    TEST_IMAGE = "sample_door.jpg" 
+    TEST_IMAGE = "IMG_3104.jpeg" 
     
     if len(sys.argv) > 2:
         TEST_IMAGE = sys.argv[2]

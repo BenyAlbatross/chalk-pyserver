@@ -133,7 +133,7 @@ def process_image(image_bytes, gemini_api_key):
     if len(approx) != 4:
         rect = cv2.minAreaRect(cnt)
         box_pts = cv2.boxPoints(rect)
-        approx = np.int0(box_pts)
+        approx = np.int32(box_pts)
         
     pts = approx.reshape(4, 2)
     
