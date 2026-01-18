@@ -1,6 +1,7 @@
 import os
 import uuid
 import time
+import io
 from concurrent.futures import ThreadPoolExecutor
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -12,6 +13,7 @@ load_dotenv()
 from chalk_processor import process_image
 from style_processor import make_ugly, make_slop, make_pretty
 from supabase_client import upload_image_to_supabase, insert_scan_record, update_scan_record, get_scan_record, get_scan_by_room_id
+from good_sounds import generate_doorbell_wav_from_image
 
 app = Flask(__name__)
 CORS(app)
@@ -262,6 +264,49 @@ def process_chalk():
         return jsonify(initial_response), 202
 
     except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/doorbell", methods=["POST"])
+def generate_doorbell_sound():
+    """
+    Generate a unique doorbell WAV sound from an uploaded image.
+    The image's brightness values are converted to musical notes.
+    """
+    print("=" * 50)
+    print("🔔 RECEIVED REQUEST TO /doorbell")
+    print(f"Files: {request.files}")
+    print("=" * 50)
+    
+    if 'image' not in request.files:
+        return jsonify({"error": "No image file provided"}), 400
+        
+    file = request.files['image']
+    if file.filename == '':
+        return jsonify({"error": "No selected file"}), 400
+
+    try:
+        # Read image bytes
+        image_bytes = file.read()
+        
+        # Generate WAV from image
+        print("🎵 Generating doorbell sound from image...")
+        wav_bytes = generate_doorbell_wav_from_image(image_bytes)
+        
+        print(f"✅ Generated WAV ({len(wav_bytes)} bytes)")
+        
+        # Return WAV file
+        from flask import send_file
+        return send_file(
+            io.BytesIO(wav_bytes),
+            mimetype='audio/wav',
+            as_attachment=True,
+            download_name='doorbell.wav'
+        )
+    
+    except Exception as e:
+        print(f"❌ Doorbell generation failed: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
